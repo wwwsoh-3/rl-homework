@@ -65,14 +65,14 @@ class Agent():
         # hyper parameter 
         self.batch_size = 128
         self.learning_rate = 0.001
-        self.num_episode = 5000
+        self.num_episode = 5000 #5000
         self.train_step = 1000000
         self.warm_episode = 10
         self.save_freq = 1000
-
+        self.max_step_per_epi = 200
         
         self.gamma = 0.99
-        self.max_step_per_epi = 100
+        self.max_step_per_epi = 200
         self.target_model_update_freq = 20
         self.max_queue_size = 50000
         
@@ -80,15 +80,13 @@ class Agent():
         self.max_eps = 1
         self.min_eps = 0.1
         self.decay_eps = 400
-        
-        self.episode_durations = []
+
         self.memory = None
-        self.rewards_arr = []
         self.epsilon_vec = []
-        self.loss = None
         self.last_step = 0
         self.last_episode = 0
-        self.id = int(time.time())
+        self.id = int(time.time())  #time.strftime('%Y%m%d_%H%M%S')
+
         
         
         if not os.path.exists(self.model_path):
@@ -128,7 +126,7 @@ class Agent():
         state_prime_values = self.target_model(state_prime_batch).max(1)[0]
         expected_q_values = (~done_batch* state_prime_values * self.gamma) + reward_batch 
         
-        loss = self.loss(predictions, expected_q_values.unsqueeze(1))
+        loss = F.mse_loss(predictions, expected_q_values.unsqueeze(1))
         
         self.optimizer.zero_grad()
         loss.backward()
@@ -148,7 +146,6 @@ class Agent():
         self.target_model.load_state_dict(self.model.state_dict())
         self.target_model.eval()
         self.optimizer = optim.Adam(self.model.parameters(), lr = self.learning_rate)        
-        self.loss = F.mse_loss
         self.memory = ReplayBuffer(self.max_queue_size)
         
         reward_in_epi = 0 
@@ -175,18 +172,12 @@ class Agent():
                 reward_in_epi += reward
                     
                 if done:
-                    self.episode_durations.append(step + 1)
-                    self.rewards_arr.append(reward_in_epi)
                     self.epsilon_vec.append(eps)
+                    print("episode : " , i_epi, " reward : ", reward_in_epi, " steps : ",  (step+1))
+                    self.writer.add_scalar("reward",reward_in_epi , i_epi)
+                    self.writer.add_scalar("steps", (step+1), i_epi)
+
                     reward_in_epi = 0
-                    N = min(10, len(self.episode_durations))
-                    
-                    print("episode : " , i_epi, \
-                          " reward : ", np.mean(self.rewards_arr[-N:]),\
-                          " steps : ", np.mean(self.episode_durations[-N:]))
-                    self.writer.add_scalar("reward", np.mean(self.rewards_arr[-N:]), i_epi)
-                    self.writer.add_scalar("steps", np.mean(self.episode_durations[-N:]), i_epi)
-     
                     break
                 step+=1
                 
@@ -194,15 +185,10 @@ class Agent():
                 self.target_model.load_state_dict(self.model.state_dict())
 
             if i_epi % self.save_freq == 0:
-                self.save()
+                torch.save(self.target_model.state_dict(), f"{self.model_path}/taxi_dqn_{self.id}.pt")
                     
             self.last_episode = i_epi
-        
-    def save(self):
-        torch.save(self.target_model.state_dict(),f"{self.model_path}/pytorch_{self.id}.pt")
 
-        
-   
         
     def predict_action(self,  state) :
         with torch.no_grad():
